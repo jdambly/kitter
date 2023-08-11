@@ -5,11 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	clog "github.com/jasonhancock/cobra-logger"
+	"github.com/jasonhancock/go-http"
+	"github.com/jasonhancock/go-logger"
 	"github.com/jdambly/kitter/pkg/netapi"
-	"github.com/rs/zerolog/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 )
 
@@ -19,12 +26,16 @@ func NewCmd() *cobra.Command {
 	var server string
 	var port string
 	var wait time.Duration
+	var httpAddr string
+	var logConf *clog.Config
 
 	// create the "client" command
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: "start client",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			l := logConf.Logger(os.Stdout)
+
 			// Check if the "server" flag was set
 			if server == "" {
 				return errors.New("the --server flag is required")
@@ -32,73 +43,96 @@ func NewCmd() *cobra.Command {
 
 			cNames, err := ResolveHostname(server)
 			if err != nil {
-				log.Error().Err(err).Msg("could not resolve hostname")
+				l.Err("could not resolve hostname", "error", err)
 				return err
 			}
-			log.Debug().Strs("cnames", cNames)
+			l.Debug("cnames", "cnames", strings.Join(cNames, ","))
+
+			registry, ok := prometheus.DefaultRegisterer.(*prometheus.Registry)
+			if !ok {
+				return errors.New("prometheus default registry is not a *prometheus.Registry")
+			}
+
+			var wg sync.WaitGroup
+			router := chi.NewRouter()
+			router.Mount("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+			http.NewHTTPServer(cmd.Context(), l.New("http"), &wg, router, httpAddr)
 
 			ticker := time.NewTimer(0)
 			for {
 				select {
 				case <-cmd.Context().Done():
-					log.Debug().Msg("Received termination signal")
+					l.Debug("received termination signal")
 					ticker.Stop()
 					return nil
 				case <-ticker.C:
-					ConnectToMultipleServers(cNames, port)
+					ConnectToMultipleServers(l, cNames, port)
 					ticker.Reset(wait)
 				}
 			}
-
-			return nil
 		},
 	}
+
+	logConf = clog.NewConfig(cmd)
 
 	// Add the "host" flag to the "client" command.
 	cmd.Flags().StringVarP(&server, "server", "s", "", "Host to connect to")
 	cmd.Flags().StringVarP(&port, "port", "p", "5102", "Port to connect to")
 	cmd.Flags().DurationVarP(&wait, "wait", "w", 1*time.Second, "Time in seconds to wait between polls")
+	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "interface:port to bind the http server to")
 
 	// Return the new command.
 	return cmd
 }
 
 // connectToServer
-func connectToServer(addr string, data string, ch chan string) error {
-	log.Debug().Str("addr", addr).Msg("connecting to host")
+func connectToServer(l *logger.L, addr string, data string) (string, error) {
+	l.Debug("connecting to host", "addr", addr)
 	client := netapi.NewClient(addr)
 	err := client.Connect()
 	if err != nil {
-		ch <- fmt.Sprintf("Failed to connect to %s: %v", addr, err)
-		return err
+		return "", fmt.Errorf("failed to connect to %s: %w", addr, err)
 	}
 	defer client.Close()
 
 	response, err := client.SendData(data)
 	if err != nil {
-		ch <- fmt.Sprintf("Failed to send data to %s: %v", addr, err)
-		return err
+		return "", fmt.Errorf("failed to send data to %s: %w", addr, err)
 	}
 
-	ch <- fmt.Sprint(response)
-	return nil
+	return response, nil
 }
 
 // ConnectToMultipleServers
-func ConnectToMultipleServers(addresses []string, port string) {
+func ConnectToMultipleServers(l *logger.L, addresses []string, port string) {
 	ch := make(chan string, len(addresses)) // Buffered channel to collect responses
 
-	for _, addr := range addresses {
-		go connectToServer(addr+":"+port, time.Now().Format(time.RFC3339Nano), ch) // Start a goroutine for each server connection
-	}
-
 	// Collect responses from all goroutines
-	for i := 0; i < len(addresses); i++ {
-		err := ProcessResponse(<-ch)
-		if err != nil {
-			log.Error().Err(err).Msg("")
+	go func() {
+		for msg := range ch {
+			err := ProcessResponse(l, msg)
+			if err != nil {
+				l.Err("processing response", "error", err)
+			}
 		}
+	}()
+
+	var wg sync.WaitGroup
+	for _, addr := range addresses {
+		// Start a goroutine for each server connection
+		wg.Add(1)
+		go func(addr string) {
+			defer wg.Done()
+			resp, err := connectToServer(l, addr+":"+port, time.Now().Format(time.RFC3339Nano))
+			if err != nil {
+				l.Err("connecting to server", "addr", addr+":"+port, "error", err)
+				return
+			}
+			ch <- resp
+		}(addr)
 	}
+	wg.Wait()
+	close(ch)
 }
 
 // ResolveHostname resolves a given hostname to its IP addresses.
@@ -123,7 +157,7 @@ func ResolveHostname(hostname string) ([]string, error) {
 }
 
 // ProcessResponse take the response from the server and calculates the RRT latency
-func ProcessResponse(data string) error {
+func ProcessResponse(l *logger.L, data string) error {
 	dStamp := time.Now()
 	var resp netapi.Response
 	err := json.Unmarshal([]byte(data), &resp)
@@ -138,6 +172,10 @@ func ProcessResponse(data string) error {
 
 	rtt := dStamp.Sub(cStamp)
 	resp.RTT = rtt.Milliseconds()
-	log.Info().Any("response", resp).Msg("")
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	l.Info("response", "response", string(b))
 	return nil
 }
