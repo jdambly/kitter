@@ -15,8 +15,13 @@ spec:
         app: kitter
     spec:
       containers:
-        - name: kitter-container
+        - name: kitter-server
           image: kitter:v0.0.1
           command: ["kitter", "server"]
+          ports:
+            - containerPort: 5102
+        - name: kitter-client
+          image: kitter:v0.0.1
+          command: [ "kitter", "client" ]
           ports:
             - containerPort: 5102

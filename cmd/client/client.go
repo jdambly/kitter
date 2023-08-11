@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"github.com/jdambly/kitter/pkg/netapi"
 	"github.com/rs/zerolog/log"
@@ -16,8 +17,13 @@ func NewCmd() *cobra.Command {
 		Use:   "client",
 		Short: "start client",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Check if the "server" flag was set
+			if !cmd.Flag("server").Changed {
+				return errors.New("the --server flag is required")
+			}
+
 			// get the value of the "host" flag
-			host, _ := cmd.Flags().GetString("host")
+			host, _ := cmd.Flags().GetString("server")
 			port, _ := cmd.Flags().GetString("port")
 			cNames, err := ResolveHostname(host)
 			if err != nil {
