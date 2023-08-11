@@ -62,23 +62,24 @@ func NewCmd() *cobra.Command {
 }
 
 // connectToServer
-func connectToServer(addr string, data string, ch chan string) {
+func connectToServer(addr string, data string, ch chan string) error {
 	log.Debug().Str("addr", addr).Msg("connecting to host")
 	client := netapi.NewClient(addr)
 	err := client.Connect()
 	if err != nil {
 		ch <- fmt.Sprintf("Failed to connect to %s: %v", addr, err)
-		return
+		return err
 	}
 	defer client.Close()
 
 	response, err := client.SendData(data)
 	if err != nil {
 		ch <- fmt.Sprintf("Failed to send data to %s: %v", addr, err)
-		return
+		return err
 	}
 
 	ch <- fmt.Sprint(response)
+	return nil
 }
 
 // ConnectToMultipleServers
