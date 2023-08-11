@@ -1,12 +1,14 @@
 package client
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jdambly/kitter/pkg/netapi"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -73,23 +75,50 @@ func ConnectToMultipleServers(addresses []string, port string) {
 
 	// Collect responses from all goroutines
 	for i := 0; i < len(addresses); i++ {
-		fmt.Println(<-ch)
+		err := ProcessResponse(<-ch)
+		if err != nil {
+			log.Error().Err(err).Msg("")
+		}
 	}
 }
 
 // ResolveHostname resolves a given hostname to its IP addresses.
 func ResolveHostname(hostname string) ([]string, error) {
-	// LookupIP looks up host using the local resolver.
-	// It returns a slice of that host's IPv4 and/or IPv6 addresses.
-	ips, err := net.LookupIP(hostname)
+	ips, err := net.LookupHost(hostname)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve hostname %s: %v", hostname, err)
+		// Check for specific DNS errors
+		if dnsErr, ok := err.(*net.DNSError); ok {
+			if dnsErr.Timeout() {
+				return nil, errors.New("DNS query timed out")
+			}
+			if dnsErr.Temporary() {
+				return nil, errors.New("Temporary DNS failure")
+			}
+			if strings.Contains(dnsErr.Error(), "no such host") {
+				return nil, errors.New("Service not found in DNS")
+			}
+		}
+		return nil, err
+	}
+	return ips, nil
+}
+
+// ProcessResponse take the response from the server and calculates the RRT latency
+func ProcessResponse(data string) error {
+	dStamp := time.Now()
+	var resp netapi.Response
+	err := json.Unmarshal([]byte(data), &resp)
+	if err != nil {
+		return err
+	}
+	resp.ClientDone = dStamp.Format(time.RFC3339Nano)
+	cStamp, err := time.Parse(time.RFC3339Nano, resp.ClientTime)
+	if err != nil {
+		return err
 	}
 
-	var ipStrings []string
-	for _, ip := range ips {
-		ipStrings = append(ipStrings, ip.String())
-	}
-
-	return ipStrings, nil
+	rtt := dStamp.Sub(cStamp)
+	resp.RTT = rtt.Milliseconds()
+	log.Info().Any("response", resp).Msg("")
+	return nil
 }

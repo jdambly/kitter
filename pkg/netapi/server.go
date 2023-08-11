@@ -41,6 +41,8 @@ type Response struct {
 	Client     string `json:"client"`
 	Server     string `json:"server"`
 	Latency    int64  `json:"latency"`
+	ClientDone string `json:"clientDone"`
+	RTT        int64  `json:"RTT"`
 }
 
 // NewServer is a factory function that creates a new Server based on the provided protocol and address.
