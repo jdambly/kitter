@@ -11,7 +11,7 @@ func TestNewRootCmdElastic(t *testing.T) {
 	rootCmd := newRootCmd(info)
 	b := bytes.NewBufferString("")
 	rootCmd.SetOut(b) // capture the outPut into a string buffer
-	rootCmd.SetArgs([]string{"elastic"})
+	rootCmd.SetArgs([]string{"client"})
 	err := rootCmd.Execute()
 	assert.NoError(t, err)
 }

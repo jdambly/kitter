@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"gihub.com/jdambly/k8s-jitter/cmd/client"
+	"github.com/jdambly/kitter/cmd/client"
+	"github.com/jdambly/kitter/cmd/server"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -18,12 +19,13 @@ func Execute(info VersionInfo) {
 // newRootCmd adds all the sub commands
 func newRootCmd(info VersionInfo) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "elkdispatch",
-		Short: "Netskope ELK made easy",
+		Use:   "kitter",
+		Short: "kitter k8s jitter",
 	}
 	cmd.AddCommand(
 		newVersionCmd(info),
 		client.NewCmd(),
+		server.NewCmd(),
 	)
 	return cmd
 }

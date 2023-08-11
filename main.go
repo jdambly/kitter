@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/netSkopePlatformEng/k8s-jitter/cmd"
+	"github.com/jdambly/kitter/cmd"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
