@@ -9,6 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kitter .
 FROM alpine:latest
 
 WORKDIR /root/
-
+RUN mkdir -p /root/bin
 # Copy the binary from the build stage
-COPY --from=build /app/kitter .
+COPY --from=build /app/kitter ./bin
+ENV PATH="/root/bin:${PATH}"
