@@ -23,5 +23,3 @@ spec:
         - name: kitter-client
           image: kitter:v0.0.1
           command: [ "kitter", "client" ]
-          ports:
-            - containerPort: 5102
