@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kitter-deployment
+  labels:
+    app: kitter
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: kitter
+  template:
+    metadata:
+      labels:
+        app: kitter
+    spec:
+      containers:
+        - name: kitter-container
+          image: kitter:v0.0.1
+          ports:
+            - containerPort: 5102
