@@ -8,7 +8,10 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -27,19 +30,32 @@ func NewCmd() *cobra.Command {
 			// get the value of the "host" flag
 			host, _ := cmd.Flags().GetString("server")
 			port, _ := cmd.Flags().GetString("port")
+			wait, _ := cmd.Flags().GetInt("wait")
 			cNames, err := ResolveHostname(host)
 			if err != nil {
 				log.Error().Err(err).Msg("could not resolve hostname")
 				return err
 			}
 			log.Debug().Strs("cnames", cNames)
-			ConnectToMultipleServers(cNames, port)
-			return nil
+			resultsChan := make(chan error, len(cNames))
+			termChan := make(chan os.Signal, 1)
+			signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+			for {
+				select {
+				case <-resultsChan:
+					ConnectToMultipleServers(cNames, port)
+					time.Sleep(time.Duration(wait) * time.Second)
+				case <-termChan:
+					log.Debug().Msg("Received termination signal")
+					return nil
+				}
+			}
 		},
 	}
 	// Add the "host" flag to the "client" command.
 	cmd.Flags().StringP("server", "s", "", "Host to connect to")
 	cmd.Flags().StringP("port", "p", "5102", "Port to connect to")
+	cmd.Flags().IntP("wait", "w", 1, "Time in seconds to wait between polls")
 
 	// Return the new command.
 	return cmd
