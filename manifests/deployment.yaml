@@ -17,5 +17,6 @@ spec:
       containers:
         - name: kitter-container
           image: kitter:v0.0.1
+          command: ["kitter", "server"]
           ports:
             - containerPort: 5102
