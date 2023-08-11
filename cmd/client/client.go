@@ -4,58 +4,60 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"strings"
+	"time"
+
 	"github.com/jdambly/kitter/pkg/netapi"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
-	"net"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
 // NewCmd
 func NewCmd() *cobra.Command {
+
+	var server string
+	var port string
+	var wait time.Duration
+
 	// create the "client" command
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: "start client",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Check if the "server" flag was set
-			if !cmd.Flag("server").Changed {
+			if server == "" {
 				return errors.New("the --server flag is required")
 			}
 
-			// get the value of the "host" flag
-			host, _ := cmd.Flags().GetString("server")
-			port, _ := cmd.Flags().GetString("port")
-			wait, _ := cmd.Flags().GetInt("wait")
-			cNames, err := ResolveHostname(host)
+			cNames, err := ResolveHostname(server)
 			if err != nil {
 				log.Error().Err(err).Msg("could not resolve hostname")
 				return err
 			}
 			log.Debug().Strs("cnames", cNames)
-			resultsChan := make(chan error, len(cNames))
-			termChan := make(chan os.Signal, 1)
-			signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+
+			ticker := time.NewTimer(0)
 			for {
 				select {
-				case <-resultsChan:
-					ConnectToMultipleServers(cNames, port)
-					time.Sleep(time.Duration(wait) * time.Second)
-				case <-termChan:
+				case <-cmd.Context().Done():
 					log.Debug().Msg("Received termination signal")
+					ticker.Stop()
 					return nil
+				case <-ticker.C:
+					ConnectToMultipleServers(cNames, port)
+					ticker.Reset(wait)
 				}
 			}
+
+			return nil
 		},
 	}
+
 	// Add the "host" flag to the "client" command.
-	cmd.Flags().StringP("server", "s", "", "Host to connect to")
-	cmd.Flags().StringP("port", "p", "5102", "Port to connect to")
-	cmd.Flags().IntP("wait", "w", 1, "Time in seconds to wait between polls")
+	cmd.Flags().StringVarP(&server, "server", "s", "", "Host to connect to")
+	cmd.Flags().StringVarP(&port, "port", "p", "5102", "Port to connect to")
+	cmd.Flags().DurationVarP(&wait, "wait", "w", 1*time.Second, "Time in seconds to wait between polls")
 
 	// Return the new command.
 	return cmd

@@ -2,7 +2,11 @@ package main
 
 // Import necessary packages
 import (
+	"context"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 
 	"github.com/jdambly/kitter/cmd"
 
@@ -30,6 +34,22 @@ func main() {
 	// Configure the global logger to write log messages to stderr in a human-friendly format.
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
-	// Execute the main command of the application, passing in the version info.
-	cmd.Execute(cmd.VersionInfo{Version: version, Commit: commit, Date: date})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	var wg sync.WaitGroup
+
+	go func() {
+		defer close(done)
+
+		// Execute the main command of the application, passing in the version info.
+		cmd.Execute(ctx, cmd.VersionInfo{Version: version, Commit: commit, Date: date})
+	}()
+
+	<-done
+	cancel()
+	wg.Wait()
+
 }
