@@ -22,4 +22,4 @@ spec:
             - containerPort: 5102
         - name: kitter-client
           image: kitter:v0.0.1
-          command: [ "kitter", "client" ]
+          command: [ '/bin/sh', '-c', '/usr/bin/tail -f /dev/null']
