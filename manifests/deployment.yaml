@@ -16,10 +16,42 @@ spec:
     spec:
       containers:
         - name: kitter-server
-          image: kitter:v0.0.1
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.1
           command: ["kitter", "server"]
           ports:
             - containerPort: 5102
         - name: kitter-client
-          image: kitter:v0.0.1
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.1
           command: [ '/bin/sh', '-c', '/usr/bin/tail -f /dev/null']
+          ports:
+            - containerPort: 8080
+              name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kitter-metrics
+  labels:
+    app: kitter
+spec:
+  selector:
+    app: kitter
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kitter-service-monitor
+  labels:
+    release: rancher-monitoring
+spec:
+  selector:
+    matchLabels:
+      app: kitter
+  endpoints:
+    - port: 8080
+      interval: 15s
+      path: /metrics
