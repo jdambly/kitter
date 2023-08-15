@@ -36,13 +36,13 @@ type TCPServer struct {
 }
 
 type Response struct {
-	ServerTime string `json:"serverTime"`
-	ClientTime string `json:"clientTime"`
-	Client     string `json:"client"`
-	Server     string `json:"server"`
-	Latency    int64  `json:"latency"`
-	ClientDone string `json:"clientDone"`
-	RTT        int64  `json:"RTT"`
+	ServerTime string  `json:"serverTime"`
+	ClientTime string  `json:"clientTime"`
+	Client     string  `json:"client"`
+	Server     string  `json:"server"`
+	Latency    float64 `json:"latency"`
+	ClientDone string  `json:"clientDone"`
+	RTT        float64 `json:"RTT"`
 }
 
 // NewServer is a factory function that creates a new Server based on the provided protocol and address.
@@ -167,7 +167,7 @@ func (t *TCPServer) ProcessData(data []byte) ([]byte, error) {
 		ClientTime: cStamp.Format(time.RFC3339Nano),
 		Client:     t.Client,
 		Server:     t.Addr,
-		Latency:    latency.Milliseconds(),
+		Latency:    latency.Seconds(),
 	}
 	// convert to json
 	respBytes, err := json.Marshal(resp)

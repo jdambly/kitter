@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"net"
 	"os"
 	"strings"
@@ -19,6 +20,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 )
+
+var (
+	metricRTT = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "kitter_rtt",
+		Help:    "round trip time",
+		Buckets: prometheus.DefBuckets, // default buckets
+	}, []string{"target"})
+)
+
+func init() {
+	prometheus.MustRegister(metricRTT)
+}
 
 // NewCmd
 func NewCmd() *cobra.Command {
@@ -109,7 +122,7 @@ func ConnectToMultipleServers(l *logger.L, addresses []string, port string) {
 
 	// Collect responses from all goroutines
 	go func() {
-		for msg := range ch {
+		for msg := range ch { // range over the channels (this is a good pattern)
 			err := ProcessResponse(l, msg)
 			if err != nil {
 				l.Err("processing response", "error", err)
@@ -131,7 +144,7 @@ func ConnectToMultipleServers(l *logger.L, addresses []string, port string) {
 			ch <- resp
 		}(addr)
 	}
-	wg.Wait()
+	wg.Wait() // wait for all the channels to do a thing and finish
 	close(ch)
 }
 
@@ -171,11 +184,13 @@ func ProcessResponse(l *logger.L, data string) error {
 	}
 
 	rtt := dStamp.Sub(cStamp)
-	resp.RTT = rtt.Milliseconds()
+	resp.RTT = rtt.Seconds()
+	metricRTT.WithLabelValues(resp.Server).Observe(resp.RTT)
 	b, err := json.Marshal(resp)
 	if err != nil {
 		return err
 	}
 	l.Info("response", "response", string(b))
+
 	return nil
 }
