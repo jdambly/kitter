@@ -29,6 +29,12 @@ var (
 	}, []string{"target"})
 )
 
+const (
+	maxRetries      = 5               // maximum number of retries
+	initialWaitTime = 2 * time.Second // initial wait time before retry
+	factor          = 2               // factor by which wait time increases
+)
+
 // NewCmd
 func NewCmd() *cobra.Command {
 
@@ -49,12 +55,24 @@ func NewCmd() *cobra.Command {
 			if server == "" {
 				return errors.New("the --server flag is required")
 			}
+			var cNames []string
+			var err error
+			for i := 0; i < maxRetries; i++ {
+				cNames, err = ResolveHostname(server)
+				if err == nil {
+					break // if successful, break out of the loop
+				}
 
-			cNames, err := ResolveHostname(server)
-			if err != nil {
-				l.Err("could not resolve hostname", "error", err)
-				return err
+				if i < maxRetries-1 { // don't sleep after the last attempt
+					waitTime := time.Duration(int64(initialWaitTime) * int64(factor^i))
+					l.Warn("failed to resolve hostname, retrying...", "error", err, "waitTime", waitTime)
+					time.Sleep(waitTime)
+				} else {
+					l.Err("could not resolve hostname after multiple attempts", "error", err)
+					return err
+				}
 			}
+
 			l.Debug("cnames", "cnames", strings.Join(cNames, ","))
 
 			registry, ok := prometheus.DefaultRegisterer.(*prometheus.Registry)

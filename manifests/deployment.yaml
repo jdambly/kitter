@@ -16,13 +16,13 @@ spec:
     spec:
       containers:
         - name: kitter-server
-          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.2
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.3
           command: ["kitter", "server"]
           ports:
             - containerPort: 5102
         - name: kitter-client
-          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.2
-          command: [ 'kitter', '-s', 'kitter-headless-service']
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.3
+          command: [ '/bin/sh', '-c', '/usr/bin/tail -f /dev/null']
           ports:
             - containerPort: 8080
               name: metrics
