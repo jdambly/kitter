@@ -16,13 +16,22 @@ spec:
     spec:
       containers:
         - name: kitter-server
-          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.3
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.4
           command: ["kitter", "server"]
           ports:
             - containerPort: 5102
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
         - name: kitter-client
-          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.3
-          command: [ '/bin/sh', '-c', '/usr/bin/tail -f /dev/null']
+          image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.4
+          command: [ 'kitter', 'client', '-s', 'kitter-headless-service']
           ports:
             - containerPort: 8080
               name: metrics

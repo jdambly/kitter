@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/rs/zerolog/log"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -166,9 +167,9 @@ func (t *TCPServer) ProcessData(data []byte) ([]byte, error) {
 		ServerTime: sStamp.Format(time.RFC3339Nano),
 		ClientTime: cStamp.Format(time.RFC3339Nano),
 		Client:     t.Client,
-		Server:     t.Addr,
 		Latency:    latency.Seconds(),
 	}
+	getNamespaceFromEnv(&resp)
 	// convert to json
 	respBytes, err := json.Marshal(resp)
 	if err != nil {
@@ -177,4 +178,8 @@ func (t *TCPServer) ProcessData(data []byte) ([]byte, error) {
 	}
 
 	return respBytes, nil
+}
+
+func getNamespaceFromEnv(data *Response) {
+	data.Server = os.Getenv("POD_NAME")
 }
