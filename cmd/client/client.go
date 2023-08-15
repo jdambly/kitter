@@ -32,7 +32,7 @@ var (
 const (
 	maxRetries      = 5               // maximum number of retries
 	initialWaitTime = 2 * time.Second // initial wait time before retry
-	factor          = 2               // factor by which wait time increases
+	factor          = 5               // factor by which wait time increases
 )
 
 // NewCmd
