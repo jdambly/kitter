@@ -29,10 +29,6 @@ var (
 	}, []string{"target"})
 )
 
-func init() {
-	prometheus.MustRegister(metricRTT)
-}
-
 // NewCmd
 func NewCmd() *cobra.Command {
 

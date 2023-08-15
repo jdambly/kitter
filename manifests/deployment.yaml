@@ -22,7 +22,7 @@ spec:
             - containerPort: 5102
         - name: kitter-client
           image: artifactory-rd.netskope.io/pe-docker/kitter:v0.0.2
-          command: [ '/bin/sh', '-c', '/usr/bin/tail -f /dev/null']
+          command: [ 'kitter', '-s', 'kitter-headless-service']
           ports:
             - containerPort: 8080
               name: metrics
