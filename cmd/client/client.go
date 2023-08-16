@@ -86,6 +86,7 @@ func NewCmd() *cobra.Command {
 			http.NewHTTPServer(cmd.Context(), l.New("http"), &wg, router, httpAddr)
 
 			ticker := time.NewTimer(0)
+			dTicker := time.NewTicker(30)
 			for {
 				select {
 				case <-cmd.Context().Done():
@@ -95,6 +96,11 @@ func NewCmd() *cobra.Command {
 				case <-ticker.C:
 					ConnectToMultipleServers(l, cNames, port)
 					ticker.Reset(wait)
+				case <-dTicker.C:
+					newNames, err := ResolveHostname(server)
+					if err == nil {
+						cNames = newNames
+					}
 				}
 			}
 		},
