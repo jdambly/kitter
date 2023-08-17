@@ -78,7 +78,7 @@ func NewCmd() *cobra.Command {
 			var wg sync.WaitGroup
 			router := chi.NewRouter()
 			router.Mount("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-			http.NewHTTPServer(cmd.Context(), nil, &wg, router, httpAddr)
+			http.NewHTTPServer(cmd.Context(), nil, &wg, router, httpAddr) // todo setup zero log to log into this httpServer
 
 			ticker := time.NewTimer(0)
 			dTicker := time.NewTicker(30)
