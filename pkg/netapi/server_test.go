@@ -10,6 +10,7 @@ import (
 )
 
 func Test_ProcessData(t *testing.T) {
+	// todo I don't really need to start the tcp server here I should be able to use the interface to mock it and just test processData
 	// Setup the server
 	srv, err := NewServer("tcp", ":1123")
 	require.NoError(t, err, "error starting TCP server")
