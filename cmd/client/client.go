@@ -27,46 +27,35 @@ var (
 	}, []string{"target"})
 )
 
-const (
-	maxRetries      = 5               // maximum number of retries
-	initialWaitTime = 2 * time.Second // initial wait time before retry
-	factor          = 5               // factor by which wait time increases
-)
-
 // NewCmd
 func NewCmd() *cobra.Command {
 	// create the vars I need to make sure they have the correct scope and are not shadowed
-	var server string
+	var hostName string
 	var port string
 	var wait time.Duration
 	var httpAddr string
+	defaultResolver := &DefaultDNSResolver{}
+	// vars for DNS retry and back off
+	retries := RetryConfig{
+		maxRetries:      5,
+		initialWaitTime: 2 * time.Second,
+		factor:          5,
+	}
 
 	// create the "client" command
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: "start client",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Check if the "server" flag was set
-			if server == "" {
-				return errors.New("the --server flag is required")
+			// Check if the "hostName" flag was set
+			if hostName == "" {
+				return errors.New("the --hostName flag is required")
 			}
-			var cNames []string
-			var err error
-			for i := 0; i < maxRetries; i++ {
-				cNames, err = ResolveHostname(server)
-				if err == nil {
-					break // if successful, break out of the loop
-				}
-
-				if i < maxRetries-1 { // don't sleep after the last attempt
-					waitTime := time.Duration(int64(initialWaitTime) * int64(factor^i))
-					log.Warn().Err(err).Dur("waitTime", waitTime).
-						Msg("failed to resolve hostname, retrying...")
-					time.Sleep(waitTime)
-				} else {
-					log.Error().Err(err).Msg("could not resolve hostname after multiple attempts")
-					return err
-				}
+			// resolve the hostname with a retry and backoff
+			cNames, err := WaitForDNS(defaultResolver, retries, hostName)
+			if err != nil {
+				log.Fatal().Err(err).Msg("")
+				return err
 			}
 			log.Debug().Strs("cnames", cNames).Msg("")
 
@@ -92,7 +81,7 @@ func NewCmd() *cobra.Command {
 					ConnectToMultipleServers(cNames, port)
 					ticker.Reset(wait)
 				case <-dTicker.C:
-					newNames, err := ResolveHostname(server)
+					newNames, err := ResolveHostname(defaultResolver, hostName)
 					if err == nil {
 						cNames = newNames
 					}
@@ -102,10 +91,10 @@ func NewCmd() *cobra.Command {
 	}
 
 	// Add the "host" flag to the "client" command.
-	cmd.Flags().StringVarP(&server, "server", "s", "", "Host to connect to")
+	cmd.Flags().StringVarP(&hostName, "hostName", "s", "", "Host to connect to")
 	cmd.Flags().StringVarP(&port, "port", "p", "5102", "Port to connect to")
 	cmd.Flags().DurationVarP(&wait, "wait", "w", 1*time.Second, "Time in seconds to wait between polls")
-	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "interface:port to bind the http server to")
+	cmd.Flags().StringVar(&httpAddr, "http-addr", ":8080", "interface:port to bind the http hostName to")
 
 	// Return the new command.
 	return cmd
@@ -162,8 +151,9 @@ func ConnectToMultipleServers(addresses []string, port string) {
 }
 
 // ResolveHostname resolves a given hostname to its IP addresses.
-func ResolveHostname(hostname string) ([]string, error) {
-	ips, err := net.LookupHost(hostname)
+func ResolveHostname(resolver DNSResolver, hostname string) ([]string, error) {
+	// Use the DNSResolver interface to make this easier to unit test
+	ips, err := resolver.LookupHost(hostname)
 	if err != nil {
 		// Check for specific DNS errors
 		if dnsErr, ok := err.(*net.DNSError); ok {
@@ -202,4 +192,28 @@ func ProcessResponse(data string) error {
 	log.Info().Any("resp", resp).Msg("")
 
 	return nil
+}
+
+// WaitForDNS this function trys to resolve a host name and then retries with a back off and then fails if it doesn't get a reponse
+func WaitForDNS(resolver DNSResolver, retry RetryConfig, hostName string) ([]string, error) {
+	var cNames []string
+	var err error = nil
+	for i := 0; i < retry.maxRetries; i++ {
+		cNames, err = ResolveHostname(resolver, hostName)
+		if err == nil {
+			break // if successful, break out of the loop
+		}
+
+		if i < retry.maxRetries-1 { // don't sleep after the last attempt
+			waitTime := time.Duration(int64(retry.initialWaitTime) * int64(retry.factor^i))
+			log.Info().Dur("wait", waitTime).
+				Msg("failed to resolve hostname, retrying...")
+			time.Sleep(waitTime)
+		} else {
+			log.Error().Err(err).Str("host", hostName).Msg("could not resolve hostname after multiple attempts")
+			return nil, err
+		}
+	}
+	log.Debug().Strs("cnames", cNames).Msg("")
+	return cNames, err
 }
