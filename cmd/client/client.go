@@ -6,18 +6,16 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	clog "github.com/jasonhancock/cobra-logger"
 	"github.com/jasonhancock/go-http"
-	"github.com/jasonhancock/go-logger"
 	"github.com/jdambly/kitter/pkg/netapi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -37,20 +35,17 @@ const (
 
 // NewCmd
 func NewCmd() *cobra.Command {
-
+	// create the vars I need to make sure they have the correct scope and are not shadowed
 	var server string
 	var port string
 	var wait time.Duration
 	var httpAddr string
-	var logConf *clog.Config
 
 	// create the "client" command
 	cmd := &cobra.Command{
 		Use:   "client",
 		Short: "start client",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			l := logConf.Logger(os.Stdout)
-
 			// Check if the "server" flag was set
 			if server == "" {
 				return errors.New("the --server flag is required")
@@ -65,15 +60,15 @@ func NewCmd() *cobra.Command {
 
 				if i < maxRetries-1 { // don't sleep after the last attempt
 					waitTime := time.Duration(int64(initialWaitTime) * int64(factor^i))
-					l.Warn("failed to resolve hostname, retrying...", "error", err, "waitTime", waitTime)
+					log.Warn().Err(err).Dur("waitTime", waitTime).
+						Msg("failed to resolve hostname, retrying...")
 					time.Sleep(waitTime)
 				} else {
-					l.Err("could not resolve hostname after multiple attempts", "error", err)
+					log.Error().Err(err).Msg("could not resolve hostname after multiple attempts")
 					return err
 				}
 			}
-
-			l.Debug("cnames", "cnames", strings.Join(cNames, ","))
+			log.Debug().Strs("cnames", cNames).Msg("")
 
 			registry, ok := prometheus.DefaultRegisterer.(*prometheus.Registry)
 			if !ok {
@@ -83,18 +78,18 @@ func NewCmd() *cobra.Command {
 			var wg sync.WaitGroup
 			router := chi.NewRouter()
 			router.Mount("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-			http.NewHTTPServer(cmd.Context(), l.New("http"), &wg, router, httpAddr)
+			http.NewHTTPServer(cmd.Context(), nil, &wg, router, httpAddr)
 
 			ticker := time.NewTimer(0)
 			dTicker := time.NewTicker(30)
 			for {
 				select {
 				case <-cmd.Context().Done():
-					l.Debug("received termination signal")
+					log.Debug().Msg("received termination signal")
 					ticker.Stop()
 					return nil
 				case <-ticker.C:
-					ConnectToMultipleServers(l, cNames, port)
+					ConnectToMultipleServers(cNames, port)
 					ticker.Reset(wait)
 				case <-dTicker.C:
 					newNames, err := ResolveHostname(server)
@@ -105,8 +100,6 @@ func NewCmd() *cobra.Command {
 			}
 		},
 	}
-
-	logConf = clog.NewConfig(cmd)
 
 	// Add the "host" flag to the "client" command.
 	cmd.Flags().StringVarP(&server, "server", "s", "", "Host to connect to")
@@ -119,8 +112,8 @@ func NewCmd() *cobra.Command {
 }
 
 // connectToServer
-func connectToServer(l *logger.L, addr string, data string) (string, error) {
-	l.Debug("connecting to host", "addr", addr)
+func connectToServer(addr string, data string) (string, error) {
+	log.Debug().Str("addr", addr).Msg("connection to hose")
 	client := netapi.NewClient(addr)
 	err := client.Connect()
 	if err != nil {
@@ -137,15 +130,15 @@ func connectToServer(l *logger.L, addr string, data string) (string, error) {
 }
 
 // ConnectToMultipleServers
-func ConnectToMultipleServers(l *logger.L, addresses []string, port string) {
+func ConnectToMultipleServers(addresses []string, port string) {
 	ch := make(chan string, len(addresses)) // Buffered channel to collect responses
 
 	// Collect responses from all goroutines
 	go func() {
 		for msg := range ch { // range over the channels (this is a good pattern)
-			err := ProcessResponse(l, msg)
+			err := ProcessResponse(msg)
 			if err != nil {
-				l.Err("processing response", "error", err)
+				log.Error().Err(err).Msg("processing response")
 			}
 		}
 	}()
@@ -156,9 +149,9 @@ func ConnectToMultipleServers(l *logger.L, addresses []string, port string) {
 		wg.Add(1)
 		go func(addr string) {
 			defer wg.Done()
-			resp, err := connectToServer(l, addr+":"+port, time.Now().Format(time.RFC3339Nano))
+			resp, err := connectToServer(addr+":"+port, time.Now().Format(time.RFC3339Nano))
 			if err != nil {
-				l.Err("connecting to server", "addr", addr+":"+port, "error", err)
+				log.Error().Str("addr", addr+":"+port).Err(err).Msg("")
 				return
 			}
 			ch <- resp
@@ -190,7 +183,7 @@ func ResolveHostname(hostname string) ([]string, error) {
 }
 
 // ProcessResponse take the response from the server and calculates the RRT latency
-func ProcessResponse(l *logger.L, data string) error {
+func ProcessResponse(data string) error {
 	dStamp := time.Now()
 	var resp netapi.Response
 	err := json.Unmarshal([]byte(data), &resp)
@@ -206,11 +199,7 @@ func ProcessResponse(l *logger.L, data string) error {
 	rtt := dStamp.Sub(cStamp)
 	resp.RTT = rtt.Seconds()
 	metricRTT.WithLabelValues(resp.Server).Observe(resp.RTT)
-	b, err := json.Marshal(resp)
-	if err != nil {
-		return err
-	}
-	l.Info("response", "response", string(b))
+	log.Info().Any("resp", resp).Msg("")
 
 	return nil
 }
