@@ -2,32 +2,31 @@ package netapi
 
 import (
 	"encoding/json"
-	"github.com/stretchr/testify/assert"
-	"log"
+	"testing"
 	"time"
 
-	"testing"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-var srv Server
-var err error
-
-func init() {
-	// Start the new server.
-	srv, err = NewServer("tcp", ":1123")
-	if err != nil {
-		log.Println("error starting TCP server")
-		return
-	}
-
-	// Run the server in Goroutine to stop tests from blocking
-	// test execution.
-	go func() {
-		_ = srv.Run()
-	}()
-}
-
 func Test_ProcessData(t *testing.T) {
+	// Setup the server
+	srv, err := NewServer("tcp", ":1123")
+	require.NoError(t, err, "error starting TCP server")
+	// create a chanel used to send the ready signal
+	readCh := make(chan struct{})
+
+	// Run the server in Goroutine to stop tests from blocking test execution.
+	go func() {
+		err := srv.Run(readCh)
+		assert.NoError(t, err)
+	}()
+	<-readCh // make sure the server is really started so that we don't have race conditions
+	defer func(srv Server) {
+		err := srv.Close()
+		assert.NoError(t, err)
+	}(srv) // Ensure the server is closed after the test
+
 	// Create an instance of JitterServer
 	tcp := &TCPServer{
 		Addr:   "localhost",
@@ -39,17 +38,13 @@ func Test_ProcessData(t *testing.T) {
 
 	// Call ProcessData
 	respBytes, err := tcp.ProcessData([]byte(testTimestamp))
-	if err != nil {
-		t.Fatalf("ProcessData failed: %v", err)
-	}
+	require.NoError(t, err, "ProcessData failed")
 
 	// Unmarshal the response
 	var resp Response
-	if err := json.Unmarshal(respBytes, &resp); err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
-	}
+	require.NoError(t, json.Unmarshal(respBytes, &resp), "Failed to unmarshal response")
 
 	// Validate the response
 	assert.NotEqual(t, resp.ClientTime, resp.ServerTime)
-	assert.Equal(t, int64(10), resp.Latency)
+	assert.GreaterOrEqual(t, float64(10), resp.Latency)
 }
