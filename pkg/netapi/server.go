@@ -13,7 +13,7 @@ import (
 // Server is an interface that defines methods for running and closing a server.
 type Server interface {
 	// Run starts the server and returns an error if any issues occur during the startup process.
-	Run() error
+	Run(readyCh chan<- struct{}) error
 
 	// Close shuts down the server and returns an error if any issues occur during the shutdown process.
 	Close() error
@@ -63,11 +63,14 @@ func NewServer(protocol, addr string) (Server, error) {
 }
 
 // Run is a method on the TCPServer struct that starts the TCP server.
+// This function takes a channel and sends a signal when it's ready
 // It listens for incoming connections on the server's address and accepts them.
 // If there is an error in listening or accepting connections, it returns the error.
-func (t *TCPServer) Run() (err error) {
+func (t *TCPServer) Run(readyCh chan<- struct{}) (err error) {
 	// Listen on the TCP network at the server's address
 	t.server, err = net.Listen("tcp", t.Addr)
+	// Signal that the server is ready to accept connections
+	close(readyCh)
 	// If there is an error in listening, return the error
 	if err != nil {
 		return
@@ -79,6 +82,9 @@ func (t *TCPServer) Run() (err error) {
 
 // Close shuts down the TCP Server
 func (t *TCPServer) Close() (err error) {
+	if t.server == nil {
+		return errors.New("server not initialized")
+	}
 	return t.server.Close()
 }
 
@@ -137,15 +143,7 @@ func (t *TCPServer) handleConnection(conn net.Conn) {
 	_ = writer.Flush()
 }
 
-/*
 // ProcessData is a method on the TCPServer struct that processes the data received from a Client connection.
-// This implementation simply echoes back the received data.
-func (t *TCPServer) ProcessData(data []byte) ([]byte, error) {
-	// Echo back the received data
-	return data, nil
-}
-*/
-
 func (t *TCPServer) ProcessData(data []byte) ([]byte, error) {
 	// server response time
 	sStamp := time.Now()

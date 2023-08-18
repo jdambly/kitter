@@ -32,6 +32,8 @@ func main() {
 	log.Logger = log.With().Caller().Logger()
 
 	// Configure the global logger to write log messages to stderr in a human-friendly format.
+	// todo this should be set by an ENV var and/or a cli flag
+	// todo also figure out how to set the logging level for and add a cli flag
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -51,5 +53,4 @@ func main() {
 	<-done
 	cancel()
 	wg.Wait()
-
 }
