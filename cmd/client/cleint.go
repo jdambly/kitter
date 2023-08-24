@@ -1,17 +1,17 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jasonhancock/go-http"
 	"github.com/jdambly/kitter/pkg/netapi"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -64,10 +64,24 @@ func NewCmd() *cobra.Command {
 				return errors.New("prometheus default registry is not a *prometheus.Registry")
 			}
 
-			var wg sync.WaitGroup
-			router := chi.NewRouter()
-			router.Mount("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
-			http.NewHTTPServer(cmd.Context(), nil, &wg, router, httpAddr) // todo setup zero log to log into this httpServer
+			// Create a context with cancellation
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel() // Ensure all resources are cleaned up
+
+			// Create a custom HTTP server
+			srv := &http.Server{
+				Addr:    httpAddr,
+				Handler: http.DefaultServeMux,
+			}
+
+			// Goroutine to run the HTTP server
+			go func() {
+				http.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+				log.Info().Str("address", httpAddr).Msg("Starting metrics server")
+				if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+					log.Error().Err(err).Msg("HTTP server ListenAndServe error")
+				}
+			}()
 
 			ticker := time.NewTimer(0)
 			dTicker := time.NewTicker(30)
@@ -76,6 +90,13 @@ func NewCmd() *cobra.Command {
 				case <-cmd.Context().Done():
 					log.Debug().Msg("received termination signal")
 					ticker.Stop()
+
+					// stop the metrics server
+					cancel() // Cancel the context
+					if err := srv.Shutdown(ctx); err != nil {
+						log.Error().Err(err).Msg("HTTP server Shutdown error")
+					}
+
 					return nil
 				case <-ticker.C:
 					ConnectToMultipleServers(cNames, port)
